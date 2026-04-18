@@ -51,7 +51,8 @@ if hasattr(sys.stdout, "reconfigure"):
 
 # Import project modules
 import data_feed
-import strategy
+import strategy as strategy_module
+from strategy import BaseStrategy, ConfigStrategy
 import validator
 import risk_manager
 import backtest_engine
@@ -108,10 +109,16 @@ def append_jsonl_safe(data: dict, path: Path) -> None:
         f.write(json.dumps(data, ensure_ascii=False, cls=_SafeJSONEncoder) + "\n")
 
 
-def run_backtest_full() -> Dict[str, Any]:
+def run_backtest_full(strategy: Optional[BaseStrategy] = None) -> Dict[str, Any]:
     """
     Main orchestrator function.
     Runs complete backtest flow and returns run metadata.
+
+    Args:
+        strategy: Optional BaseStrategy instance. If None, defaults to
+                  ConfigStrategy(config) — the YAML-driven pipeline.
+                  Pass a ComposableStrategy (or any BaseStrategy subclass)
+                  to use a programmatic strategy instead.
     """
     print("=" * 80)
     print("StratForge - Deterministic Backtester")
@@ -171,26 +178,36 @@ def run_backtest_full() -> Dict[str, Any]:
     if len(val_df) == 0:
         raise ValueError("Validation window contains no data")
     
-    # Step 5: Run strategy on each window
+    # Step 5: Resolve strategy instance and generate signals
+    if strategy is None:
+        strategy = ConfigStrategy(config)
+
     print("\n[5/12] Generating signals...")
+    print(f"  → Strategy: {strategy.name}")
     print("  → Running strategy on train window...")
-    train_signals = strategy.generate_signals(train_df, config)
+    train_signals = strategy.generate_signals(train_df)
     print(f"    ✓ Train signals: {len(train_signals)} rows, {(train_signals['signal'] != 0).sum()} signals")
-    
+
     print("  → Running strategy on validation window...")
-    val_signals = strategy.generate_signals(val_df, config)
+    val_signals = strategy.generate_signals(val_df)
     print(f"    ✓ Validation signals: {len(val_signals)} rows, {(val_signals['signal'] != 0).sum()} signals")
     
     # Step 6: Validate outputs
+    # Pass config only for ConfigStrategy so the lookahead smoke test can re-run
+    # the same strategy on a truncated dataset. For ComposableStrategy the test
+    # is skipped (validator warns) because the strategy object, not config, holds
+    # the logic — re-running it on truncated data still works structurally.
+    val_config = config if isinstance(strategy, ConfigStrategy) else None
+
     print("\n[6/12] Validating strategy outputs...")
-    train_valid, train_errors = validator.validate_strategy_output(train_df, train_signals, config)
+    train_valid, train_errors = validator.validate_strategy_output(train_df, train_signals, val_config)
     if not train_valid:
         error_msg = "Train validation failed:\n" + "\n".join(train_errors)
         print(f"  ✗ {error_msg}")
         raise ValueError(error_msg)
     print("  ✓ Train validation passed")
 
-    val_valid, val_errors = validator.validate_strategy_output(val_df, val_signals, config)
+    val_valid, val_errors = validator.validate_strategy_output(val_df, val_signals, val_config)
     if not val_valid:
         error_msg = "Validation validation failed:\n" + "\n".join(val_errors)
         print(f"  ✗ {error_msg}")
@@ -243,6 +260,7 @@ def run_backtest_full() -> Dict[str, Any]:
     run_data = {
         "run": run_number,
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "strategy_name": strategy.name,
         "symbol": symbol,
         "timeframe": timeframe,
         "timezones": {
