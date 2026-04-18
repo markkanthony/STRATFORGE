@@ -1,0 +1,22 @@
+# StratForge - Requirements
+# Python 3.11+ required
+
+# Core data processing
+pandas>=2.1.0
+numpy>=1.25.0
+
+# Configuration
+pyyaml>=6.0.1
+
+# Visualization
+matplotlib>=3.8.0
+
+# Market data integration
+MetaTrader5>=5.0.45
+
+# AI optimization
+anthropic>=0.25.0
+
+# Additional utilities
+python-dateutil>=2.8.2
+pytz>=2023.3
