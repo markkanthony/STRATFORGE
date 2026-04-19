@@ -59,9 +59,20 @@ def build_run_list_items(active_run: int = None) -> list:
     return [_run_card(h, h.get("run") == active_run) for h in history]
 
 
-def build_sidebar() -> html.Div:
-    """Build the full sidebar component."""
+def build_sidebar(static: bool = False) -> html.Div:
+    """Build the full sidebar component.
+
+    static=True: position:relative for embedding inside a flex container.
+    static=False (default): position:fixed for the standalone layout.
+    """
     latest = get_latest_run_number()
+
+    _pos = (
+        {"position": "relative", "top": "auto", "left": "auto",
+         "height": "100%", "zIndex": "auto", "minHeight": "100vh"}
+        if static else
+        {"position": "fixed", "top": 0, "left": 0, "height": "100vh", "zIndex": 100}
+    )
 
     return html.Div(
         [
@@ -170,11 +181,7 @@ def build_sidebar() -> html.Div:
             "minWidth": "240px",
             "background": "#0e1117",
             "borderRight": "1px solid #2a2e39",
-            "height": "100vh",
-            "position": "fixed",
-            "top": 0,
-            "left": 0,
             "overflowY": "auto",
-            "zIndex": 100,
+            **_pos,
         },
     )

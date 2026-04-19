@@ -30,6 +30,7 @@ from ui.callbacks import (
     journal_callbacks,
     backtest_callbacks,
     sidebar_callbacks,
+    nav_callbacks,
 )
 
 
@@ -38,10 +39,12 @@ def create_app() -> dash.Dash:
         __name__,
         external_stylesheets=[
             dbc.themes.DARKLY,
-            # Google Inter font for clean typography
+            # Inter font for clean typography
             "https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap",
+            # Bootstrap Icons for nav icons
+            "https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css",
         ],
-        suppress_callback_exceptions=True,  # tabs render lazily — components may not exist yet
+        suppress_callback_exceptions=True,  # sections render lazily
         title="StratForge",
         update_title=None,
     )
@@ -54,6 +57,7 @@ def create_app() -> dash.Dash:
     journal_callbacks.register(app)
     backtest_callbacks.register(app)
     sidebar_callbacks.register(app)
+    nav_callbacks.register(app)
 
     return app
 
