@@ -1,6 +1,6 @@
 # StratForge
 
-A deterministic Python backtester with AI optimization loop. Supports indicator-driven, pattern-driven, and hybrid strategies with pluggable risk models and optional visualization.
+A deterministic Python backtester with an interactive web UI, pluggable strategy architecture, and AI optimization loop. Supports indicator-driven, pattern-driven, and hybrid strategies with pluggable risk models.
 
 ---
 
@@ -36,11 +36,13 @@ pip install -r requirements.txt
 
 ## Quick Start
 
+### 1. Run a backtest
+
 ```bash
 python run.py
 ```
 
-That's it. The orchestrator runs the full 12-step pipeline and prints progress to the console.
+The orchestrator runs the full 12-step pipeline and prints progress to the console.
 
 **Expected output:**
 
@@ -68,6 +70,39 @@ That's it. The orchestrator runs the full 12-step pipeline and prints progress t
 | `results/history.jsonl` | Append-only log of every run (Sharpe, return, drawdown) |
 | `results/run_001/*.png` | Chart images (equity curve, drawdown, histograms, etc.) |
 | `results/run_001/summary.html` | HTML summary report |
+
+---
+
+### 2. Open the Web UI
+
+```bash
+python ui/app.py
+```
+
+Then open **http://127.0.0.1:8050** in your browser.
+
+The UI loads immediately with all existing runs available. No extra setup needed — it reads directly from `results/`.
+
+**UI tabs:**
+
+| Tab | What you see |
+|-----|--------------|
+| **Dashboard** | All runs in a sortable table · Sharpe bar chart · Risk-return scatter |
+| **Chart** | TradingView-style candlestick chart with trade entries, exits, SL/TP lines, equity curve, and volume |
+| **Journal** | Full trade-by-trade log — sortable, filterable, color-coded win/loss |
+
+**Sidebar controls:**
+
+- Click any run to load it
+- Toggle **Train / Validation** window
+- Click **▶ Run New Backtest** to trigger a new run without leaving the UI — the sidebar refreshes automatically when it completes
+
+**Chart interactions:**
+
+- Hover over a trade marker to see PnL, R-multiple, exit reason, and bars held
+- Click a row in the Journal → chart zooms to that trade
+- Scroll to zoom · drag to pan
+- Dashed lines show each trade's SL (red) and TP (green) from entry to exit
 
 ---
 
@@ -201,17 +236,37 @@ Results are saved to `results/run_NNN.diff.json` per iteration.
 
 ```
 STRATFORGE/
-├── run.py               # Main orchestrator (run this)
-├── ai_loop.py           # AI optimization loop
-├── strategy.py          # Signal generation pipeline
-├── validator.py         # Lookahead and signal integrity checks
-├── risk_manager.py      # Position sizing and risk enforcement
-├── backtest_engine.py   # Deterministic bar-by-bar engine
-├── metrics.py           # Performance metrics (Sharpe, Calmar, etc.)
-├── plotter.py           # Visualization layer (matplotlib)
-├── data_feed.py         # MT5 + CSV data loader
+├── run.py               # Backtest orchestrator  →  python run.py
+├── ai_loop.py           # AI optimization loop   →  python ai_loop.py
+├── strategy.py          # Strategy pipeline (BaseStrategy / ComposableStrategy / ConfigStrategy)
 ├── config.yaml          # All settings
 ├── requirements.txt     # Python dependencies
+│
+├── core/                # Backtest pipeline
+│   ├── backtest_engine.py
+│   ├── data_feed.py
+│   ├── metrics.py
+│   ├── risk_manager.py
+│   └── validator.py
+│
+├── signal/              # Standalone indicator & pattern functions
+│   ├── indicators.py    # ema, rsi, atr, macd, bollinger, ...
+│   └── patterns.py      # bullish_engulfing, sweep_prev_low, orb, ...
+│
+├── viz/                 # Static chart generation (matplotlib)
+│   └── plotter.py
+│
+├── ui/                  # Interactive web UI     →  python ui/app.py
+│   ├── app.py           # Entry point
+│   ├── layout.py
+│   ├── pages/           # dashboard.py · chart.py · journal.py
+│   ├── components/      # metrics_panel.py · run_selector.py
+│   ├── callbacks/       # run · chart · journal · sidebar · backtest
+│   └── data/
+│       └── loader.py
+│
+├── docs/                # Spec & integration notes
+├── tests/               # test_data_feed.py
 ├── data/
 │   └── fallback.csv     # Synthetic EURUSD H1 data (2023)
 └── results/             # Generated outputs (gitignored)
