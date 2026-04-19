@@ -228,7 +228,23 @@ def build_home_layout() -> html.Div:
                 }),
             ], style={"display": "flex", "alignItems": "center"}),
 
-            html.Span("Backtesting Platform", style={"fontSize": "11px", "color": _MUTED}),
+            html.Div([
+                html.Span("Backtesting Platform", style={"fontSize": "11px", "color": _MUTED, "marginRight": "16px"}),
+                html.Button(
+                    "+ New Project",
+                    id="btn-create-project",
+                    style={
+                        "fontSize": "12px",
+                        "fontWeight": "700",
+                        "color": _BLUE,
+                        "background": f"{_BLUE}0d",
+                        "border": f"1px solid {_BLUE}44",
+                        "borderRadius": "6px",
+                        "padding": "6px 14px",
+                        "cursor": "pointer",
+                    },
+                ),
+            ], style={"display": "flex", "alignItems": "center"}),
         ], style={
             "display": "flex",
             "justifyContent": "space-between",
@@ -237,6 +253,67 @@ def build_home_layout() -> html.Div:
             "background": "#0b0e17",
             "borderBottom": f"1px solid {_BORDER}",
         }),
+
+        # ── Create project modal ───────────────────────────────── #
+        dbc.Modal([
+            dbc.ModalHeader(
+                dbc.ModalTitle("New Project", style={"fontSize": "15px", "fontWeight": "700", "color": _TEXT}),
+                style={"background": "#1c253d", "borderBottom": f"1px solid {_BORDER}"},
+                close_button=True,
+            ),
+            dbc.ModalBody([
+                html.P(
+                    "Projects are defined by a config.yaml file. "
+                    "Create a new config.yaml in the project root to add a project.",
+                    style={"fontSize": "13px", "color": _MUTED, "marginBottom": "20px"},
+                ),
+                html.Div([
+                    html.Div("Symbol", style={"fontSize": "11px", "color": _MUTED, "marginBottom": "5px"}),
+                    dbc.Input(id="new-project-symbol", placeholder="e.g. EURUSD", type="text",
+                              style={"background": "#131722", "border": f"1px solid {_BORDER}",
+                                     "color": _TEXT, "fontSize": "13px"}),
+                ], style={"marginBottom": "14px"}),
+                html.Div([
+                    html.Div("Timeframe", style={"fontSize": "11px", "color": _MUTED, "marginBottom": "5px"}),
+                    dbc.Select(
+                        id="new-project-timeframe",
+                        options=[
+                            {"label": "M15", "value": "M15"},
+                            {"label": "M30", "value": "M30"},
+                            {"label": "H1",  "value": "H1"},
+                            {"label": "H4",  "value": "H4"},
+                            {"label": "D1",  "value": "D1"},
+                        ],
+                        value="H1",
+                        style={"background": "#131722", "border": f"1px solid {_BORDER}",
+                               "color": _TEXT, "fontSize": "13px"},
+                    ),
+                ], style={"marginBottom": "14px"}),
+                html.Div([
+                    html.Div("Strategy Mode", style={"fontSize": "11px", "color": _MUTED, "marginBottom": "5px"}),
+                    dbc.RadioItems(
+                        id="new-project-mode",
+                        options=[
+                            {"label": "Hybrid",    "value": "hybrid"},
+                            {"label": "Indicator", "value": "indicator"},
+                            {"label": "Pattern",   "value": "pattern"},
+                        ],
+                        value="hybrid",
+                        inline=True,
+                        labelStyle={"fontSize": "13px", "marginRight": "16px", "cursor": "pointer"},
+                    ),
+                ], style={"marginBottom": "8px"}),
+                html.Div(id="new-project-msg", style={"fontSize": "12px", "marginTop": "10px"}),
+            ], style={"background": "#111827"}),
+            dbc.ModalFooter([
+                dbc.Button("Cancel", id="btn-create-project-cancel", color="secondary", outline=True,
+                           size="sm", style={"marginRight": "8px"}),
+                dbc.Button("Create Project", id="btn-create-project-confirm", color="primary",
+                           size="sm", style={"fontWeight": "700"}),
+            ], style={"background": "#1c253d", "borderTop": f"1px solid {_BORDER}"}),
+        ], id="modal-create-project", is_open=False,
+           style={"fontFamily": "'Inter', 'Segoe UI', sans-serif"},
+           backdrop=True),
 
         # ── Global stats bar ───────────────────────────────────── #
         _build_stats_bar(history),

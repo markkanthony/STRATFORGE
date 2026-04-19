@@ -1,19 +1,26 @@
 """
 ui/callbacks/nav_callbacks.py
 
-Three callbacks that drive all navigation:
+Callbacks that drive all navigation:
 
   A. URL pathname → show/hide page-home / page-project
   B. Nav button clicks → store-project-section
   C. store-project-section → section panel visibility + nav button active styles
   D. store-run-data → refresh overview section content
+  E. Create Project modal open/close + confirm
 """
+
+from pathlib import Path
+import yaml
 
 from dash import Input, Output, State, ctx, no_update
 
 from ui.pages.overview      import build_overview_content
 from ui.pages.strategy_view import build_strategy_content
 from ui.pages.risk_view     import build_risk_content
+
+_ROOT        = Path(__file__).parent.parent.parent
+_CONFIG_PATH = _ROOT / "config.yaml"
 
 _BLUE   = "#3b82f6"
 _TEXT   = "#e2e8f0"
@@ -107,3 +114,56 @@ def register(app):
     )
     def refresh_overview(run_data, window):
         return build_overview_content(run_data, window or "validation")
+
+    # ── E: Create Project modal open/close ────────────────────── #
+    @app.callback(
+        Output("modal-create-project", "is_open"),
+        Input("btn-create-project",        "n_clicks"),
+        Input("btn-create-project-cancel", "n_clicks"),
+        Input("btn-create-project-confirm","n_clicks"),
+        State("modal-create-project",      "is_open"),
+        prevent_initial_call=True,
+    )
+    def toggle_create_modal(n_open, n_cancel, n_confirm, is_open):
+        triggered = ctx.triggered_id
+        if triggered == "btn-create-project":
+            return True
+        return False  # cancel or confirm both close
+
+    # ── F: Create Project confirm → write config.yaml ─────────── #
+    @app.callback(
+        Output("new-project-msg", "children"),
+        Output("new-project-msg", "style"),
+        Input("btn-create-project-confirm", "n_clicks"),
+        State("new-project-symbol",    "value"),
+        State("new-project-timeframe", "value"),
+        State("new-project-mode",      "value"),
+        prevent_initial_call=True,
+    )
+    def create_project(n_clicks, symbol, timeframe, mode):
+        if not symbol or not symbol.strip():
+            return "Symbol is required.", {"fontSize": "12px", "color": "#ef4444", "marginTop": "10px"}
+
+        symbol = symbol.strip().upper()
+
+        try:
+            # Load existing config to preserve all other settings
+            if _CONFIG_PATH.exists():
+                with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
+                    config = yaml.safe_load(f) or {}
+            else:
+                config = {}
+
+            config.setdefault("backtest", {})["symbol"]    = symbol
+            config.setdefault("backtest", {})["timeframe"] = timeframe or "H1"
+            config.setdefault("strategy", {})["mode"]      = mode or "hybrid"
+
+            with open(_CONFIG_PATH, "w", encoding="utf-8") as f:
+                yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+            return (
+                f"✓ Project updated: {symbol} {timeframe} ({mode}). Restart the app to reflect changes.",
+                {"fontSize": "12px", "color": "#14b8a6", "marginTop": "10px"},
+            )
+        except Exception as e:
+            return f"Error: {e}", {"fontSize": "12px", "color": "#ef4444", "marginTop": "10px"}
