@@ -2,10 +2,13 @@
 
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
+
+_UNSAFE_SECRETS = frozenset({"dev_secret_change_me", "secret", "changeme", ""})
 
 
 class Settings(BaseSettings):
@@ -20,6 +23,16 @@ class Settings(BaseSettings):
 
     secret_key: str = "dev_secret_change_me"
     jwt_lifetime_seconds: int = 60 * 60 * 12
+
+    @field_validator("secret_key")
+    @classmethod
+    def secret_key_must_be_set(cls, v: str) -> str:
+        if v in _UNSAFE_SECRETS or len(v) < 32:
+            raise ValueError(
+                "SECRET_KEY is insecure. Set a random value of at least 32 characters in your .env file. "
+                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+        return v
     database_url: str = "sqlite+aiosqlite:///./stratforge.db"
 
     frontend_url: str = "http://localhost:5173"
