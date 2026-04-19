@@ -18,10 +18,17 @@ INDICATORS = [
     },
     {
         "name": "sma",
-        "display_name": "SMA",
+        "display_name": "EMA Slow",
         "category": "Trend",
-        "description": "Simple moving average of close price.",
+        "description": "Secondary EMA used as the slow comparison line in crossover and state rules.",
         "params": [{"name": "period", "type": "int", "default": 20, "min": 2, "max": 500, "label": "Period"}],
+    },
+    {
+        "name": "ema_trend",
+        "display_name": "EMA Trend",
+        "category": "Trend",
+        "description": "Third EMA used as a higher-order trend anchor for 3-EMA stack rules.",
+        "params": [{"name": "period", "type": "int", "default": 200, "min": 2, "max": 500, "label": "Period"}],
     },
     {
         "name": "rsi",

@@ -13,6 +13,7 @@ from api.database import get_async_session
 from api.deps import ensure_project_capacity, get_project_for_user
 from api.models import Project, Run, Strategy, User
 from api.schemas import ProjectCreate, ProjectOut, ProjectUpdate
+from core.data_feed import get_default_symbol
 
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -61,7 +62,7 @@ async def create_project(
     db: AsyncSession = Depends(get_async_session),
 ) -> ProjectOut:
     await ensure_project_capacity(user, db)
-    project = Project(user_id=user.id, **body.model_dump())
+    project = Project(user_id=user.id, symbol=get_default_symbol(), **body.model_dump())
     db.add(project)
     await db.commit()
     await db.refresh(project)

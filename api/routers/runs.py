@@ -45,7 +45,7 @@ async def trigger_run(
     project = await db.scalar(select(Project).where(Project.id == strategy.project_id))
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
-    return await enqueue_run(strategy, project, db, body.window_override)
+    return await enqueue_run(strategy, project, db, body.window_override, body.symbol_override)
 
 
 @router.get("/api/runs/{run_id}", response_model=RunOut)

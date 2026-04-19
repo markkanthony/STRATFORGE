@@ -62,6 +62,7 @@ def build_run_config(
     project: Project,
     strategy_config: dict[str, Any],
     window_override: dict[str, Any] | None = None,
+    symbol_override: str | None = None,
 ) -> dict[str, Any]:
     config = load_base_config()
     config["backtest"]["symbol"] = project.symbol
@@ -81,7 +82,12 @@ def build_run_config(
     strategy_backtest = strategy_config.get("backtest") if isinstance(strategy_config, dict) else None
     if isinstance(strategy_backtest, dict):
         for key, value in strategy_backtest.items():
+            if key == "symbol":
+                continue
             config["backtest"][key] = value
+
+    if symbol_override:
+        config["backtest"]["symbol"] = symbol_override
 
     return config
 
@@ -91,6 +97,7 @@ async def enqueue_run(
     project: Project,
     db: AsyncSession,
     window_override: dict[str, Any] | None = None,
+    symbol_override: str | None = None,
 ) -> Run:
     run = Run(strategy_id=strategy.id, status="pending")
     db.add(run)
@@ -101,6 +108,7 @@ async def enqueue_run(
         project=project,
         strategy_config=normalize_strategy_config(strategy.config_json),
         window_override=window_override,
+        symbol_override=symbol_override,
     )
     asyncio.get_running_loop().run_in_executor(_executor, _run_worker, str(run.id), config)
     return run

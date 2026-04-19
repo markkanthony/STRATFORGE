@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,13 +15,26 @@ from api.deps import ensure_strategy_capacity, get_project_for_user, get_strateg
 from api.models import Strategy, User
 from api.runner import load_base_config, normalize_strategy_config
 from api.schemas import StrategyCreate, StrategyOut, StrategyUpdate
+from strategy import build_default_python_strategy_config, validate_entry_code_source
 
 
 router = APIRouter(tags=["strategies"])
 
 
 def _default_strategy_payload() -> dict:
-    return load_base_config().get("strategy", {})
+    return build_default_python_strategy_config(load_base_config())
+
+
+def _validate_strategy_payload(payload: dict) -> dict:
+    normalized = build_default_python_strategy_config(normalize_strategy_config(payload))
+    entry_code = normalized.get("strategy", {}).get("entry_code")
+    if not isinstance(entry_code, str) or not entry_code.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Strategy config must include strategy.entry_code.")
+    try:
+        validate_entry_code_source(entry_code)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return normalized
 
 
 def _strategy_out(strategy: Strategy) -> StrategyOut:
@@ -61,7 +74,7 @@ async def create_strategy(
 ) -> StrategyOut:
     await get_project_for_user(project_id, user, db)
     await ensure_strategy_capacity(user, project_id, db)
-    config_payload = body.config_json or _default_strategy_payload()
+    config_payload = _validate_strategy_payload(body.config_json or _default_strategy_payload())
     strategy = Strategy(
         project_id=project_id,
         name=body.name,
@@ -95,7 +108,7 @@ async def update_strategy(
     strategy = await get_strategy_for_user(strategy_id, user, db)
     updates = body.model_dump(exclude_none=True)
     if "config_json" in updates:
-        strategy.config_json = json.dumps(updates.pop("config_json"))
+        strategy.config_json = json.dumps(_validate_strategy_payload(updates.pop("config_json")))
     for field, value in updates.items():
         setattr(strategy, field, value)
     await db.commit()

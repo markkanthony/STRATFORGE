@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.config import settings
 from api.database import create_tables
-from api.routers import auth, billing, chart, library, projects, runs, strategies, trades
+from api.routers import auth, billing, chart, library, projects, provider, runs, strategies, trades
 
 
 logger = logging.getLogger("stratforge.api")
@@ -53,6 +53,7 @@ app.include_router(runs.router)
 app.include_router(chart.router)
 app.include_router(trades.router)
 app.include_router(library.router)
+app.include_router(provider.router)
 app.include_router(billing.router)
 
 

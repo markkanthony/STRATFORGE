@@ -96,6 +96,40 @@ def resolve_symbol(symbol: str) -> str:
     return symbol
 
 
+def list_mt5_symbols() -> list[str]:
+    """
+    Return the available symbol names from the currently configured MT5 provider.
+    """
+    if not MT5_AVAILABLE:
+        return []
+
+    if not MT5.initialize():
+        return []
+
+    try:
+        symbols = MT5.symbols_get()
+        if not symbols:
+            return []
+        return sorted({str(symbol.name).upper() for symbol in symbols if getattr(symbol, "name", None)})
+    finally:
+        MT5.shutdown()
+
+
+def list_available_symbols() -> list[str]:
+    """
+    Return provider-backed symbols when possible, otherwise a conservative fallback.
+    """
+    symbols = list_mt5_symbols()
+    if symbols:
+        return symbols
+    return ["EURUSD"]
+
+
+def get_default_symbol() -> str:
+    symbols = list_available_symbols()
+    return symbols[0] if symbols else "EURUSD"
+
+
 def _parse_timeframe(timeframe_str: str) -> int:
     """
     Convert timeframe string to MT5 timeframe constant.
