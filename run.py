@@ -50,14 +50,14 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 # Import project modules
-import data_feed
+from core import data_feed
 import strategy as strategy_module
 from strategy import BaseStrategy, ConfigStrategy
-import validator
-import risk_manager
-import backtest_engine
-import metrics
-import plotter
+from core import validator
+from core import risk_manager
+from core import backtest_engine
+from core import metrics
+from viz import plotter
 
 
 def load_config(config_path: Path = Path("config.yaml")) -> dict:

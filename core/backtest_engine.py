@@ -29,11 +29,9 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Tuple, Optional, Any
 from pathlib import Path
-import sys
 
 # Import risk_manager for position sizing
-sys.path.insert(0, str(Path(__file__).parent))
-from risk_manager import calculate_position_size, check_risk_constraints
+from .risk_manager import calculate_position_size, check_risk_constraints
 
 
 def run_backtest(df: pd.DataFrame, config: Dict, window_label: str) -> Dict[str, Any]:

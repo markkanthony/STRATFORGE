@@ -3,7 +3,7 @@ Test script for data_feed.py - demonstrates expected output format
 """
 
 import yaml
-from data_feed import get_ohlcv, is_mt5_available
+from core.data_feed import get_ohlcv, is_mt5_available
 
 # Load config
 with open("config.yaml", "r") as f:
