@@ -342,23 +342,24 @@ RESPOND WITH VALID JSON ONLY (no markdown, no explanation outside JSON):
     def _parse_ai_response(self, response_text: str) -> Dict[str, Any]:
         """
         Parse AI response and extract JSON.
-        
+
         Args:
             response_text: Raw response from AI
-            
+
         Returns:
             Parsed proposal dictionary
         """
-        # Try to find JSON in response
-        import re
-        
-        # Look for JSON block
-        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-        if not json_match:
-            raise ValueError("No JSON found in AI response")
-        
-        json_str = json_match.group(0)
-        proposal = json.loads(json_str)
+        decoder = json.JSONDecoder()
+        idx = response_text.find('{')
+        proposal = None
+        while idx != -1:
+            try:
+                proposal, _ = decoder.raw_decode(response_text, idx)
+                break
+            except json.JSONDecodeError:
+                idx = response_text.find('{', idx + 1)
+        if proposal is None:
+            raise ValueError("No valid JSON found in AI response")
         
         # Validate required fields
         required = ["hypothesis", "change_type", "reasoning"]

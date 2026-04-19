@@ -13,6 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.config import settings
 from api.models import User
 
+# In-memory idempotency store for processed webhook event IDs.
+# For multi-process deployments replace with a shared store (Redis, DB table).
+_processed_event_ids: set[str] = set()
+
 
 def get_stripe_client():
     stripe.api_key = settings.stripe_secret_key
@@ -96,7 +100,15 @@ async def handle_webhook(payload: bytes, signature: str, db: AsyncSession) -> di
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Stripe webhook signature.") from exc
 
+    event_id = event.get("id")
+    if event_id and event_id in _processed_event_ids:
+        return {"received": True}
+
     await apply_billing_event(event, db)
+
+    if event_id:
+        _processed_event_ids.add(event_id)
+
     return {"received": True}
 
 
