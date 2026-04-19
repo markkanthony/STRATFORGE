@@ -14,8 +14,6 @@ The new product surface adds:
 - a React + Vite frontend in `web/`
 - user auth, projects, strategies, runs, chart review, and Stripe billing hooks
 
-The legacy Dash UI in `ui/` still works for local-only usage.
-
 ## Requirements
 
 - Python 3.11+
@@ -105,7 +103,7 @@ Local Vite development already proxies `/api` and `/auth` to `http://localhost:8
 Typical SaaS workflow:
 
 1. Register a user account.
-2. Create a project with a symbol and timeframe.
+2. Create a project with a symbol.
 3. Create or edit a strategy in the visual builder.
 4. Trigger a backtest from the project page or strategy editor.
 5. Open the run detail page to inspect chart data, trades, and metrics.
@@ -127,18 +125,6 @@ This still produces the usual engine artifacts under `results/`, including:
 | `results/latest.json` | Latest run summary |
 | `results/history.jsonl` | Append-only run log |
 | `results/run_001/` | Static charts and HTML summary |
-
-### Legacy Dash UI
-
-Run the original local dashboard:
-
-```bash
-python ui/app.py
-```
-
-Then open `http://127.0.0.1:8081`.
-
-This mode reads directly from `results/` and does not use the FastAPI backend or the React frontend.
 
 ### AI loop
 
@@ -202,8 +188,7 @@ The FastAPI backend lives in `api/` and provides:
 
 The React app lives in `web/` and provides:
 
-- landing page and pricing
-- login and registration
+- pricing
 - dashboard with project cards
 - project detail with strategy list and run history
 - strategy editor with the visual builder
@@ -233,9 +218,6 @@ npm run dev
 # Production frontend build
 cd web
 npm run build
-
-# Legacy local UI
-python ui/app.py
 
 # Direct engine run
 python run.py

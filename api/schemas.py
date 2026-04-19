@@ -28,7 +28,6 @@ class UserUpdate(fastapi_users_schemas.BaseUserUpdate):
 class ProjectCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    symbol: str = "EURUSD"
 
 
 class ProjectUpdate(BaseModel):
@@ -96,6 +95,15 @@ class StrategyOut(BaseModel):
 
 class RunTriggerRequest(BaseModel):
     window_override: Optional[dict[str, Any]] = None
+    symbol_override: Optional[str] = None
+
+    @field_validator("symbol_override")
+    @classmethod
+    def normalize_symbol_override(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip().upper()
+        return normalized or None
 
 
 class RunOut(BaseModel):

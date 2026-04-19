@@ -32,9 +32,48 @@ NO-LOOKAHEAD GUARANTEE:
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 import pandas as pd
 import numpy as np
+
+TIMEFRAME_TO_PANDAS_ALIAS = {
+    "M1": "1min",
+    "M5": "5min",
+    "M15": "15min",
+    "M30": "30min",
+    "H1": "1h",
+    "H4": "4h",
+    "D1": "1d",
+}
+
+ENTRY_CONTRACT_VERSION = 1
+DEFAULT_ENTRY_CODE = """def generate_entry(df):
+    long_mask = (df["ema_fast"] > df["ema_slow"]) & (df["rsi"] > 50)
+    short_mask = (df["ema_fast"] < df["ema_slow"]) & (df["rsi"] < 50)
+    return long_mask.fillna(False), short_mask.fillna(False)
+""".strip()
+
+SAFE_ENTRY_BUILTINS: dict[str, Any] = {
+    "abs": abs,
+    "all": all,
+    "any": any,
+    "bool": bool,
+    "dict": dict,
+    "enumerate": enumerate,
+    "float": float,
+    "int": int,
+    "len": len,
+    "list": list,
+    "max": max,
+    "min": min,
+    "print": print,
+    "range": range,
+    "round": round,
+    "set": set,
+    "sum": sum,
+    "tuple": tuple,
+    "zip": zip,
+}
 
 
 # ================================================================== #
@@ -224,6 +263,8 @@ class ComposableStrategy(BaseStrategy):
         if "session" not in df.columns:
             df["session"] = _label_sessions(df)
 
+        df = build_rule_features(df)
+
         # Evaluate entry rules
         df = _apply_rules(df, self._long_rules, self._short_rules)
 
@@ -306,6 +347,7 @@ def _generate_from_config(df: pd.DataFrame, config: Dict) -> pd.DataFrame:
     if mode == "indicator":
         _ensure_pattern_columns_false(df)
 
+    df = build_rule_features(df)
     df = evaluate_rules(df, config)
     df = build_exit_levels(df, config)
 
@@ -318,12 +360,15 @@ def _generate_from_config(df: pd.DataFrame, config: Dict) -> pd.DataFrame:
 
 
 def build_indicator_features(df: pd.DataFrame, config: Dict) -> pd.DataFrame:
-    """Add EMA fast/slow, RSI, and ATR columns."""
+    """Add EMA, RSI, ATR, and Bollinger-derived columns."""
     ind_cfg = config["strategy"].get("indicators", {})
     fast_period = int(ind_cfg.get("fast_ema", 10))
     slow_period = int(ind_cfg.get("slow_ema", 50))
+    trend_period = int(ind_cfg.get("trend_ema", 200))
     rsi_period  = int(ind_cfg.get("rsi_period", 14))
     atr_period  = int(ind_cfg.get("atr_period", 14))
+    bollinger_period = int(ind_cfg.get("bollinger_period", 20))
+    bollinger_std = float(ind_cfg.get("bollinger_std", 2.0))
 
     close = df["close"]
     high  = df["high"]
@@ -331,6 +376,7 @@ def build_indicator_features(df: pd.DataFrame, config: Dict) -> pd.DataFrame:
 
     df["ema_fast"] = close.ewm(span=fast_period, adjust=False).mean()
     df["ema_slow"] = close.ewm(span=slow_period, adjust=False).mean()
+    df["ema_trend"] = close.ewm(span=trend_period, adjust=False).mean()
 
     delta    = close.diff(1)
     gain     = delta.clip(lower=0.0)
@@ -346,6 +392,12 @@ def build_indicator_features(df: pd.DataFrame, config: Dict) -> pd.DataFrame:
     tr3 = (low  - prev_close).abs()
     df["tr"]  = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     df["atr"] = df["tr"].ewm(com=atr_period - 1, adjust=False).mean()
+
+    rolling_close = close.rolling(window=max(bollinger_period, 1), min_periods=max(bollinger_period, 1))
+    df["bb_mid"] = rolling_close.mean()
+    bb_std = rolling_close.std(ddof=0)
+    df["bb_upper"] = df["bb_mid"] + (bb_std * bollinger_std)
+    df["bb_lower"] = df["bb_mid"] - (bb_std * bollinger_std)
 
     return df
 
@@ -408,9 +460,25 @@ def build_pattern_features(df: pd.DataFrame, config: Dict) -> pd.DataFrame:
 def build_context_features(df: pd.DataFrame, config: Dict) -> pd.DataFrame:
     """Add trend_up/down, prev-day levels, and session label."""
     ctx_cfg = config["strategy"].get("context", {})
+    ind_cfg = config["strategy"].get("indicators", {})
 
     trend_filter = ctx_cfg.get("trend_filter", "ema")
-    if trend_filter == "ema" and "ema_fast" in df.columns and "ema_slow" in df.columns:
+    use_higher_timeframe = bool(ctx_cfg.get("use_higher_timeframe", False))
+    higher_timeframe = ctx_cfg.get("higher_timeframe")
+    higher_timeframe_trend = None
+
+    if trend_filter == "ema" and use_higher_timeframe and isinstance(higher_timeframe, str):
+        higher_timeframe_trend = _build_higher_timeframe_trend(
+            df,
+            base_timeframe=str(config.get("backtest", {}).get("timeframe", "")),
+            higher_timeframe=higher_timeframe,
+            fast_period=int(ind_cfg.get("fast_ema", 10)),
+            slow_period=int(ind_cfg.get("slow_ema", 50)),
+        )
+
+    if higher_timeframe_trend is not None:
+        df["trend_up"], df["trend_down"] = higher_timeframe_trend
+    elif trend_filter == "ema" and "ema_fast" in df.columns and "ema_slow" in df.columns:
         prev_fast = df["ema_fast"].shift(1)
         prev_slow = df["ema_slow"].shift(1)
         df["trend_up"]   = (prev_fast > prev_slow).fillna(False)
@@ -433,12 +501,153 @@ def build_context_features(df: pd.DataFrame, config: Dict) -> pd.DataFrame:
     return df
 
 
+def validate_entry_code_source(entry_code: str) -> None:
+    namespace = _load_entry_namespace(entry_code)
+    generate_entry = namespace.get("generate_entry")
+    if not callable(generate_entry):
+        raise ValueError("Entry code must define generate_entry(df).")
+
+
+def build_default_python_strategy_config(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    normalized = dict(config or {})
+    strategy_cfg = dict(normalized.get("strategy", {}))
+    indicators_cfg = dict(strategy_cfg.get("indicators", {}))
+    indicators_cfg.setdefault("fast_ema", 10)
+    indicators_cfg.setdefault("slow_ema", 50)
+    indicators_cfg.setdefault("trend_ema", 200)
+    indicators_cfg.setdefault("rsi_period", 14)
+    indicators_cfg.setdefault("atr_period", 14)
+    indicators_cfg.setdefault("bollinger_period", 20)
+    indicators_cfg.setdefault("bollinger_std", 2.0)
+    strategy_cfg["indicators"] = indicators_cfg
+    strategy_cfg.setdefault("patterns", {})
+    strategy_cfg.setdefault("context", {})
+    strategy_cfg.setdefault("exits", {})
+    strategy_cfg["entry_contract_version"] = ENTRY_CONTRACT_VERSION
+    strategy_cfg["entry_code"] = str(strategy_cfg.get("entry_code") or DEFAULT_ENTRY_CODE).strip()
+    strategy_cfg.pop("entry", None)
+    normalized["strategy"] = strategy_cfg
+    return normalized
+
+
+def build_rule_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Add explicit boolean entry-rule columns from already-computed features."""
+    df = df.copy()
+    false_series = pd.Series(False, index=df.index)
+
+    if "ema_fast" in df.columns and "ema_slow" in df.columns:
+        prev_fast = df["ema_fast"].shift(1)
+        prev_slow = df["ema_slow"].shift(1)
+        prev_prev_fast = df["ema_fast"].shift(2)
+        prev_prev_slow = df["ema_slow"].shift(2)
+
+        df["ema_fast_above_slow"] = (prev_fast > prev_slow).fillna(False)
+        df["ema_fast_below_slow"] = (prev_fast < prev_slow).fillna(False)
+        df["ema_fast_crosses_above_slow"] = (
+            (prev_prev_fast <= prev_prev_slow) & (prev_fast > prev_slow)
+        ).fillna(False)
+        df["ema_fast_crosses_below_slow"] = (
+            (prev_prev_fast >= prev_prev_slow) & (prev_fast < prev_slow)
+        ).fillna(False)
+
+        df["close_above_ema_slow"] = (df["close"] > df["ema_slow"]).fillna(False)
+        df["close_below_ema_slow"] = (df["close"] < df["ema_slow"]).fillna(False)
+        df["open_above_ema_slow"] = (df["open"] > df["ema_slow"]).fillna(False)
+        df["open_below_ema_slow"] = (df["open"] < df["ema_slow"]).fillna(False)
+    else:
+        for col in (
+            "ema_fast_above_slow",
+            "ema_fast_below_slow",
+            "ema_fast_crosses_above_slow",
+            "ema_fast_crosses_below_slow",
+            "close_above_ema_slow",
+            "close_below_ema_slow",
+            "open_above_ema_slow",
+            "open_below_ema_slow",
+        ):
+            df[col] = false_series
+
+    if "ema_trend" in df.columns and "ema_fast" in df.columns and "ema_slow" in df.columns:
+        prev_fast = df["ema_fast"].shift(1)
+        prev_slow = df["ema_slow"].shift(1)
+        prev_trend = df["ema_trend"].shift(1)
+        df["ema_bull_stack_3"] = ((prev_fast > prev_slow) & (prev_slow > prev_trend)).fillna(False)
+        df["ema_bear_stack_3"] = ((prev_fast < prev_slow) & (prev_slow < prev_trend)).fillna(False)
+        df["close_above_ema_trend"] = (df["close"] > df["ema_trend"]).fillna(False)
+        df["close_below_ema_trend"] = (df["close"] < df["ema_trend"]).fillna(False)
+    else:
+        for col in (
+            "ema_bull_stack_3",
+            "ema_bear_stack_3",
+            "close_above_ema_trend",
+            "close_below_ema_trend",
+        ):
+            df[col] = false_series
+
+    if "rsi" in df.columns:
+        df["rsi_above_50"] = (df["rsi"] > 50).fillna(False)
+        df["rsi_below_50"] = (df["rsi"] < 50).fillna(False)
+        df["rsi_above_60"] = (df["rsi"] > 60).fillna(False)
+        df["rsi_below_40"] = (df["rsi"] < 40).fillna(False)
+        df["rsi_above_70"] = (df["rsi"] > 70).fillna(False)
+        df["rsi_below_30"] = (df["rsi"] < 30).fillna(False)
+    else:
+        for col in (
+            "rsi_above_50",
+            "rsi_below_50",
+            "rsi_above_60",
+            "rsi_below_40",
+            "rsi_above_70",
+            "rsi_below_30",
+        ):
+            df[col] = false_series
+
+    if all(column in df.columns for column in ("bb_upper", "bb_lower", "bb_mid")):
+        df["bb_close_above_upper"] = (df["close"] > df["bb_upper"]).fillna(False)
+        df["bb_close_below_lower"] = (df["close"] < df["bb_lower"]).fillna(False)
+        df["bb_open_above_upper"] = (df["open"] > df["bb_upper"]).fillna(False)
+        df["bb_open_below_lower"] = (df["open"] < df["bb_lower"]).fillna(False)
+        df["bb_close_above_mid"] = (df["close"] > df["bb_mid"]).fillna(False)
+        df["bb_close_below_mid"] = (df["close"] < df["bb_mid"]).fillna(False)
+    else:
+        for col in (
+            "bb_close_above_upper",
+            "bb_close_below_lower",
+            "bb_open_above_upper",
+            "bb_open_below_lower",
+            "bb_close_above_mid",
+            "bb_close_below_mid",
+        ):
+            df[col] = false_series
+
+    if "session" in df.columns:
+        session = df["session"].astype(str).str.lower()
+        df["session_asia"] = session.eq("asia")
+        df["session_london"] = session.eq("london")
+        df["session_newyork"] = session.eq("newyork")
+        df["session_overlap"] = session.eq("overlap")
+    else:
+        for col in ("session_asia", "session_london", "session_newyork", "session_overlap"):
+            df[col] = false_series
+
+    return df
+
+
 def evaluate_rules(df: pd.DataFrame, config: Dict) -> pd.DataFrame:
-    """Produce signal column from config entry rules."""
-    entry_cfg   = config["strategy"].get("entry", {})
-    long_rules  = entry_cfg.get("long_require_all", [])
+    """Produce signal column from Python entry code or legacy entry rules."""
+    strategy_cfg = config.get("strategy", {})
+    entry_code = strategy_cfg.get("entry_code")
+
+    if isinstance(entry_code, str) and entry_code.strip():
+        return _apply_python_entry_code(df, entry_code)
+
+    entry_cfg = strategy_cfg.get("entry", {})
+    long_rules = entry_cfg.get("long_require_all", [])
     short_rules = entry_cfg.get("short_require_all", [])
-    return _apply_rules(df, long_rules, short_rules)
+    if long_rules or short_rules:
+        return _apply_rules(df, long_rules, short_rules)
+
+    raise ValueError("Strategy config must include strategy.entry_code.")
 
 
 def build_exit_levels(df: pd.DataFrame, config: Dict) -> pd.DataFrame:
@@ -473,6 +682,84 @@ def _apply_rules(
     df.loc[long_mask & short_mask, "signal"] = 0  # conflict → no trade
     df["signal"] = df["signal"].astype(int)
     return df
+
+
+def _apply_python_entry_code(df: pd.DataFrame, entry_code: str) -> pd.DataFrame:
+    namespace = _load_entry_namespace(entry_code, df)
+    generate_entry = namespace.get("generate_entry")
+    if not callable(generate_entry):
+        raise ValueError("Entry code must define generate_entry(df).")
+
+    try:
+        result = generate_entry(df)
+    except Exception as exc:
+        raise ValueError(f"Entry code execution failed: {exc}") from exc
+
+    if not isinstance(result, tuple) or len(result) != 2:
+        raise ValueError("generate_entry(df) must return a tuple of (long_mask, short_mask).")
+
+    long_mask = _coerce_entry_mask(result[0], df.index, "long_mask")
+    short_mask = _coerce_entry_mask(result[1], df.index, "short_mask")
+    return _apply_signal_masks(df, long_mask, short_mask)
+
+
+def _apply_signal_masks(
+    df: pd.DataFrame,
+    long_mask: pd.Series,
+    short_mask: pd.Series,
+) -> pd.DataFrame:
+    df["signal"] = 0
+    df.loc[long_mask, "signal"] = 1
+    df.loc[short_mask, "signal"] = -1
+    df.loc[long_mask & short_mask, "signal"] = 0
+    df["signal"] = df["signal"].astype(int)
+    return df
+
+
+def _coerce_entry_mask(mask: Any, index: pd.Index, label: str) -> pd.Series:
+    if isinstance(mask, pd.Series):
+        if len(mask) != len(index):
+            raise ValueError(f"{label} length does not match the DataFrame length.")
+        series = mask.reindex(index)
+    elif isinstance(mask, (np.ndarray, list, tuple)):
+        if len(mask) != len(index):
+            raise ValueError(f"{label} length does not match the DataFrame length.")
+        series = pd.Series(mask, index=index)
+    else:
+        raise ValueError(f"{label} must be a pandas Series, numpy array, list, or tuple.")
+
+    non_null = series.dropna()
+    if not non_null.map(lambda value: isinstance(value, (bool, np.bool_))).all():
+        raise ValueError(f"{label} must contain only boolean values.")
+
+    return series.fillna(False).astype(bool)
+
+
+def _load_entry_namespace(entry_code: str, df: Optional[pd.DataFrame] = None) -> dict[str, Any]:
+    source = str(entry_code or "").strip()
+    if not source:
+        raise ValueError("Entry code cannot be empty.")
+
+    try:
+        compiled = compile(source, "<strategy-entry>", "exec")
+    except SyntaxError as exc:
+        raise ValueError(f"Entry code syntax error: {exc.msg} (line {exc.lineno})") from exc
+
+    global_namespace: dict[str, Any] = {
+        "__builtins__": SAFE_ENTRY_BUILTINS,
+        "np": np,
+        "pd": pd,
+    }
+    if df is not None:
+        global_namespace["df"] = df
+
+    local_namespace: dict[str, Any] = {}
+    try:
+        exec(compiled, global_namespace, local_namespace)
+    except Exception as exc:
+        raise ValueError(f"Entry code setup failed: {exc}") from exc
+
+    return {**global_namespace, **local_namespace}
 
 
 def _apply_exits(
@@ -586,3 +873,57 @@ def _ensure_pattern_columns_false(df: pd.DataFrame) -> None:
     ):
         if col not in df.columns:
             df[col] = False
+
+
+def _build_higher_timeframe_trend(
+    df: pd.DataFrame,
+    base_timeframe: str,
+    higher_timeframe: str,
+    fast_period: int,
+    slow_period: int,
+) -> Optional[tuple[pd.Series, pd.Series]]:
+    normalized_higher = str(higher_timeframe).upper()
+    normalized_base = str(base_timeframe).upper()
+    if not normalized_higher or normalized_higher == normalized_base:
+        return None
+
+    working = df.loc[:, ["time", "close"]].copy()
+    if working.empty or "time" not in working or "close" not in working:
+        return None
+
+    bucket = _build_timeframe_bucket(working["time"], normalized_higher)
+    if bucket is None:
+        return None
+
+    working["_original_index"] = df.index
+    working["_bucket"] = bucket
+    working.sort_values("time", inplace=True)
+
+    grouped = working.groupby("_bucket", sort=True)["close"].last().to_frame("close")
+    if grouped.empty:
+        return None
+
+    ema_fast = grouped["close"].ewm(span=max(fast_period, 1), adjust=False).mean()
+    ema_slow = grouped["close"].ewm(span=max(slow_period, 1), adjust=False).mean()
+    grouped["trend_up"] = (ema_fast.shift(1) > ema_slow.shift(1)).fillna(False)
+    grouped["trend_down"] = (ema_fast.shift(1) < ema_slow.shift(1)).fillna(False)
+
+    working["trend_up"] = working["_bucket"].map(grouped["trend_up"]).fillna(False).astype(bool)
+    working["trend_down"] = working["_bucket"].map(grouped["trend_down"]).fillna(False).astype(bool)
+
+    mapped = working.set_index("_original_index").reindex(df.index)
+    return mapped["trend_up"].fillna(False).astype(bool), mapped["trend_down"].fillna(False).astype(bool)
+
+
+def _build_timeframe_bucket(times: pd.Series, timeframe: str) -> Optional[pd.Series]:
+    normalized = timeframe.upper()
+    if normalized == "W1":
+        return times.dt.to_period("W-MON").dt.start_time
+    if normalized == "MN1":
+        return times.dt.to_period("M").dt.start_time
+
+    alias = TIMEFRAME_TO_PANDAS_ALIAS.get(normalized)
+    if not alias:
+        return None
+
+    return times.dt.floor(alias)
