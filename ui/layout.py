@@ -34,6 +34,9 @@ def build_layout() -> html.Div:
             dcc.Store(id="store-run-data",              data=None),
             dcc.Store(id="store-highlighted-trade-idx", data=None),
             dcc.Store(id="store-project-section",       data="overview"),
+            dcc.Store(id="store-strategy-mode",         data="copy-paste"),
+            dcc.Store(id="store-strategy-prompt",       data=None),
+            dcc.Store(id="store-agent-output",          data=None),
 
             # ---- Home page (shown by default) -------------------- #
             html.Div(

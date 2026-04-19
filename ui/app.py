@@ -31,6 +31,7 @@ from ui.callbacks import (
     backtest_callbacks,
     sidebar_callbacks,
     nav_callbacks,
+    strategy_callbacks,
 )
 
 
@@ -58,6 +59,7 @@ def create_app() -> dash.Dash:
     backtest_callbacks.register(app)
     sidebar_callbacks.register(app)
     nav_callbacks.register(app)
+    strategy_callbacks.register(app)
 
     return app
 
