@@ -65,7 +65,6 @@ def build_run_config(
 ) -> dict[str, Any]:
     config = load_base_config()
     config["backtest"]["symbol"] = project.symbol
-    config["backtest"]["timeframe"] = project.timeframe
 
     if window_override:
         config["windows"].update(window_override)
@@ -78,6 +77,11 @@ def build_run_config(
                     config[section] = strategy_config[section]
         else:
             config["strategy"] = strategy_config
+
+    strategy_backtest = strategy_config.get("backtest") if isinstance(strategy_config, dict) else None
+    if isinstance(strategy_backtest, dict):
+        for key, value in strategy_backtest.items():
+            config["backtest"][key] = value
 
     return config
 

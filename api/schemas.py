@@ -29,14 +29,12 @@ class ProjectCreate(BaseModel):
     name: str
     description: Optional[str] = None
     symbol: str = "EURUSD"
-    timeframe: str = "H1"
 
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     symbol: Optional[str] = None
-    timeframe: Optional[str] = None
 
 
 class ProjectOut(BaseModel):
@@ -46,7 +44,7 @@ class ProjectOut(BaseModel):
     name: str
     description: Optional[str]
     symbol: str
-    timeframe: str
+    timeframe: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     strategy_count: int = 0

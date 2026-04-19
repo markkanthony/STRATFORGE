@@ -32,7 +32,7 @@ async def _project_out(project: Project, db: AsyncSession) -> ProjectOut:
         name=project.name,
         description=project.description,
         symbol=project.symbol,
-        timeframe=project.timeframe,
+        timeframe=None,
         created_at=project.created_at,
         updated_at=project.updated_at,
         strategy_count=strategy_count,

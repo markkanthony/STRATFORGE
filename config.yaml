@@ -1,35 +1,27 @@
-# StratForge Configuration
-# Phase 1 - Baseline Configuration
-
 time:
   data_timezone: broker
   system_timezone: UTC
   display_timezone: Asia/Manila
   session_timezone: Asia/Manila
-
 backtest:
-  symbol: EURUSD
+  symbol: TEST
   timeframe: H1
   capital: 10000
   spread: 1.0
   commission: 7.0
   slippage_pips: 0.5
-
 windows:
   train_start: 2023-01-01
   train_end: 2023-06-30
   validation_start: 2023-07-01
   validation_end: 2023-12-31
-
 strategy:
   mode: hybrid
-
   indicators:
     fast_ema: 10
     slow_ema: 50
     rsi_period: 14
     atr_period: 14
-
   patterns:
     bullish_engulfing: true
     bearish_engulfing: true
@@ -39,29 +31,24 @@ strategy:
     orb:
       enabled: true
       bars: 3
-
   context:
     use_prev_day_levels: true
     use_session_filter: true
     trend_filter: ema
-
   entry:
     long_require_all:
-      - trend_up
-      - sweep_prev_low
-      - bullish_engulfing
+    - trend_up
+    - sweep_prev_low
+    - bullish_engulfing
     short_require_all:
-      - trend_down
-      - sweep_prev_high
-      - bearish_engulfing
-
+    - trend_down
+    - sweep_prev_high
+    - bearish_engulfing
   exits:
     atr_sl_multiplier: 1.5
     atr_tp_multiplier: 2.0
-
 risk:
   model: fixed_fractional
-
   constraints:
     max_positions: 1
     max_open_risk_pct: 2.0
@@ -69,25 +56,20 @@ risk:
     max_drawdown_halt_pct: 15.0
     min_stop_pips: 3
     max_stop_pips: 100
-
   fixed_lot:
-    lot: 0.10
-
+    lot: 0.1
   fixed_fractional:
     risk_pct: 1.0
-
   volatility_adjusted:
     risk_pct: 1.0
     atr_reference_period: 14
     atr_size_scale: 1.0
-
   fractional_kelly:
     enabled: false
     lookback_trades: 50
     kelly_fraction_cap: 0.25
     min_trades_required: 30
     max_risk_pct: 1.5
-
 visualization:
   enabled: true
   mode: detailed
