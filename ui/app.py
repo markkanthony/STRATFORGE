@@ -4,7 +4,7 @@ ui/app.py — StratForge Web UI entry point.
 Run from the project root:
     python ui/app.py
 
-Then open: http://127.0.0.1:8050
+Then open: http://127.0.0.1:8081
 """
 
 import sys
@@ -59,14 +59,17 @@ def create_app() -> dash.Dash:
 
 
 if __name__ == "__main__":
+    host = "127.0.0.1"
+    port = 8081
     app = create_app()
     print("=" * 60)
     print("  StratForge UI")
-    print("  http://127.0.0.1:8050")
+    print(f"  Dashboard: http://{host}:{port}")
+    print("  Uses local results/ artifacts only")
     print("=" * 60)
     app.run(
         debug=False,          # set True for dev hot-reload (requires main thread)
-        host="127.0.0.1",
-        port=8050,
+        host=host,
+        port=port,
         use_reloader=False,   # reloader requires signal module (unavailable on Windows subprocesses)
     )

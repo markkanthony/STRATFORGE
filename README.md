@@ -1,16 +1,28 @@
 # StratForge
 
-A deterministic Python backtester with an interactive web UI, pluggable strategy architecture, and AI optimization loop. Supports indicator-driven, pattern-driven, and hybrid strategies with pluggable risk models.
+StratForge is a deterministic Python backtesting engine with a new SaaS wrapper on top.
 
----
+The engine layer stays intact:
+
+- `run.py` for direct backtests
+- `ai_loop.py` for local AI iteration
+- `strategy.py`, `core/`, and the existing signal modules
+
+The new product surface adds:
+
+- a FastAPI backend in `api/`
+- a React + Vite frontend in `web/`
+- user auth, projects, strategies, runs, chart review, and Stripe billing hooks
+
+The legacy Dash UI in `ui/` still works for local-only usage.
 
 ## Requirements
 
 - Python 3.11+
-- MetaTrader 5 (optional — CSV fallback works without it)
-- An [Anthropic API key](https://console.anthropic.com/) (only required for `ai_loop.py`)
-
----
+- Node.js 20+ and npm
+- MetaTrader 5 is optional
+- An Anthropic API key is only required for `ai_loop.py`
+- A Stripe account is only required if you want billing routes to work
 
 ## Installation
 
@@ -19,7 +31,7 @@ A deterministic Python backtester with an interactive web UI, pluggable strategy
 git clone https://github.com/markkanthony/STRATFORGE.git
 cd STRATFORGE
 
-# 2. Create and activate a virtual environment (recommended)
+# 2. Create and activate a virtual environment
 python -m venv venv
 
 # Windows
@@ -28,260 +40,203 @@ venv\Scripts\activate
 # macOS / Linux
 source venv/bin/activate
 
-# 3. Install dependencies
+# 3. Install Python dependencies
 pip install -r requirements.txt
+
+# 4. Install frontend dependencies
+cd web
+npm install
+cd ..
 ```
 
----
+If PowerShell blocks `npm`, use `npm.cmd install` and `npm.cmd run dev` instead.
 
-## Quick Start
+## Environment Setup
 
-### 1. Run a backtest
+Create a backend `.env` file from the example:
+
+```bash
+# macOS / Linux
+cp .env.example .env
+
+# PowerShell
+Copy-Item .env.example .env
+```
+
+Important variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `SECRET_KEY` | JWT and auth secrets |
+| `DATABASE_URL` | SQLite for dev, PostgreSQL for production |
+| `FRONTEND_URL` | CORS and Stripe redirect base URL |
+| `STRIPE_SECRET_KEY` | Required for Checkout and billing portal |
+| `STRIPE_WEBHOOK_SECRET` | Required for webhook verification |
+| `STRIPE_PRICE_PRO` | Stripe price ID for Pro |
+| `STRIPE_PRICE_ELITE` | Stripe price ID for Elite |
+
+Default local development uses SQLite and creates `stratforge.db` automatically on first API startup.
+
+## Usage
+
+### SaaS mode
+
+Start the API:
+
+```bash
+uvicorn api.main:app --reload --port 8000
+```
+
+Start the frontend in a second terminal:
+
+```bash
+cd web
+npm run dev
+```
+
+Then open:
+
+- Frontend: `http://localhost:5173`
+- API docs: `http://localhost:8000/docs`
+- Health check: `http://localhost:8000/health`
+
+Local Vite development already proxies `/api` and `/auth` to `http://localhost:8000`, so you do not need `VITE_API_URL` for local use.
+
+Typical SaaS workflow:
+
+1. Register a user account.
+2. Create a project with a symbol and timeframe.
+3. Create or edit a strategy in the visual builder.
+4. Trigger a backtest from the project page or strategy editor.
+5. Open the run detail page to inspect chart data, trades, and metrics.
+6. Open Settings or Pricing if Stripe billing is configured.
+
+### CLI engine mode
+
+Run the original backtest pipeline directly:
 
 ```bash
 python run.py
 ```
 
-The orchestrator runs the full 12-step pipeline and prints progress to the console.
-
-**Expected output:**
-
-```
-[1/12] Loading config...         ✓ Config loaded
-[2/12] Determining run number... ✓ Run number: 1
-[3/12] Fetching market data...   ✓ Fetched 6240 bars
-[4/12] Splitting windows...      ✓ Train: 3097 bars / Validation: 3120 bars
-[5/12] Generating signals...     ✓ 194 train signals / 180 val signals
-[6/12] Validating outputs...     ✓ Train validation passed / Val validation passed
-[7/12] Running backtests...      ✓ 47 train trades / 64 val trades
-[8/12] Computing metrics...      ✓ Done
-[9/12] Saving results...         ✓ results/run_001.json
-[10/12] Visualizations...        ✓ results/run_001/
-[11/12] latest.json...           ✓ Updated
-[12/12] history.jsonl...         ✓ Appended
-```
-
-**Output files:**
+This still produces the usual engine artifacts under `results/`, including:
 
 | Path | Description |
-|------|-------------|
-| `results/run_001.json` | Full run record with trades, metrics, config snapshot |
-| `results/latest.json` | Lightweight summary of the most recent run |
-| `results/history.jsonl` | Append-only log of every run (Sharpe, return, drawdown) |
-| `results/run_001/*.png` | Chart images (equity curve, drawdown, histograms, etc.) |
-| `results/run_001/summary.html` | HTML summary report |
+| --- | --- |
+| `results/run_001.json` | Full run artifact with trades, metrics, and config snapshot |
+| `results/latest.json` | Latest run summary |
+| `results/history.jsonl` | Append-only run log |
+| `results/run_001/` | Static charts and HTML summary |
 
----
+### Legacy Dash UI
 
-### 2. Open the Web UI
+Run the original local dashboard:
 
 ```bash
 python ui/app.py
 ```
 
-Then open **http://127.0.0.1:8050** in your browser.
+Then open `http://127.0.0.1:8081`.
 
-The UI loads immediately with all existing runs available. No extra setup needed — it reads directly from `results/`.
+This mode reads directly from `results/` and does not use the FastAPI backend or the React frontend.
 
-**UI tabs:**
+### AI loop
 
-| Tab | What you see |
-|-----|--------------|
-| **Dashboard** | All runs in a sortable table · Sharpe bar chart · Risk-return scatter |
-| **Chart** | TradingView-style candlestick chart with trade entries, exits, SL/TP lines, equity curve, and volume |
-| **Journal** | Full trade-by-trade log — sortable, filterable, color-coded win/loss |
-
-**Sidebar controls:**
-
-- Click any run to load it
-- Toggle **Train / Validation** window
-- Click **▶ Run New Backtest** to trigger a new run without leaving the UI — the sidebar refreshes automatically when it completes
-
-**Chart interactions:**
-
-- Hover over a trade marker to see PnL, R-multiple, exit reason, and bars held
-- Click a row in the Journal → chart zooms to that trade
-- Scroll to zoom · drag to pan
-- Dashed lines show each trade's SL (red) and TP (green) from entry to exit
-
----
-
-## Data Sources
-
-StratForge tries MT5 first, then falls back to CSV automatically.
-
-**Option A — MetaTrader 5 (live broker data)**
-
-1. Open MetaTrader 5 and log into your broker account.
-2. Ensure the symbol in `config.yaml` (`backtest.symbol`) is subscribed in Market Watch.
-3. Run `python run.py` — MT5 data is fetched automatically.
-
-**Option B — CSV fallback (no MT5 required)**
-
-Place a CSV file at `data/fallback.csv` with this header:
-
-```
-time,open,high,low,close,tick_volume
-2023-01-02 00:00:00,1.07016,1.07027,1.07004,1.07016,2085
-...
-```
-
-The repo ships with a synthetic 6 240-bar EURUSD H1 file covering all of 2023 so the backtester runs out of the box.
-
----
-
-## Configuration
-
-All settings live in `config.yaml`. The key sections:
-
-### `backtest`
-```yaml
-backtest:
-  symbol: EURUSD
-  timeframe: H1
-  capital: 10000
-  spread: 1.0          # pips
-  commission: 7.0      # USD round-trip
-  slippage_pips: 0.5
-```
-
-### `windows`
-```yaml
-windows:
-  train_start: 2023-01-01
-  train_end:   2023-06-30
-  validation_start: 2023-07-01
-  validation_end:   2023-12-31
-```
-
-### `strategy`
-```yaml
-strategy:
-  mode: hybrid   # indicator | pattern | hybrid
-  indicators:
-    fast_ema: 10
-    slow_ema: 50
-    rsi_period: 14
-    atr_period: 14
-  entry:
-    long_require_all:
-      - trend_up
-      - sweep_prev_low
-      - bullish_engulfing
-    short_require_all:
-      - trend_down
-      - sweep_prev_high
-      - bearish_engulfing
-  exits:
-    atr_sl_multiplier: 1.5
-    atr_tp_multiplier: 2.0
-```
-
-### `risk`
-```yaml
-risk:
-  model: fixed_fractional   # fixed_lot | fixed_fractional | volatility_adjusted | fractional_kelly
-  fixed_fractional:
-    risk_pct: 1.0
-  constraints:
-    max_positions: 1
-    max_daily_loss_pct: 3.0
-    max_drawdown_halt_pct: 15.0
-    min_stop_pips: 3
-    max_stop_pips: 100
-```
-
-### `visualization`
-```yaml
-visualization:
-  enabled: true
-  mode: detailed   # off | basic | detailed
-```
-
----
-
-## AI Optimization Loop
-
-The AI loop reads the latest backtest results, proposes targeted changes to `config.yaml` and/or `strategy.py`, validates them, and reruns automatically.
-
-**Setup:**
+Set your Anthropic API key first:
 
 ```bash
-# Set your Anthropic API key
-export ANTHROPIC_API_KEY=sk-ant-...   # macOS / Linux
-set ANTHROPIC_API_KEY=sk-ant-...      # Windows
+# macOS / Linux
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# Windows Command Prompt
+set ANTHROPIC_API_KEY=sk-ant-...
+
+# PowerShell
+$env:ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
-**Run:**
+Then run:
 
 ```bash
 python ai_loop.py
 ```
 
-The loop stops automatically when any of these conditions are met:
+`ai_loop.py` is still a local engine workflow. It is not wired into the SaaS UI.
 
-| Condition | Threshold |
-|-----------|-----------|
-| Validation Sharpe | > 2.0 |
-| Validation max drawdown | < 15% |
-| Overfit gap (train − val Sharpe) | < 1.0 for 3 consecutive runs |
-| No improvement over last 8 runs | plateau |
-| Hard cap | 50 iterations |
+## Data Sources
 
-Results are saved to `results/run_NNN.diff.json` per iteration.
+StratForge tries MetaTrader 5 first, then falls back to CSV automatically.
 
----
+### MetaTrader 5
 
-## Project Structure
+1. Open MetaTrader 5 and log into your broker account.
+2. Make sure the symbol in `config.yaml` is available in Market Watch.
+3. Run `python run.py` or trigger a run through the API/UI.
 
-```
-STRATFORGE/
-├── run.py               # Backtest orchestrator  →  python run.py
-├── ai_loop.py           # AI optimization loop   →  python ai_loop.py
-├── strategy.py          # Strategy pipeline (BaseStrategy / ComposableStrategy / ConfigStrategy)
-├── config.yaml          # All settings
-├── requirements.txt     # Python dependencies
-│
-├── core/                # Backtest pipeline
-│   ├── backtest_engine.py
-│   ├── data_feed.py
-│   ├── metrics.py
-│   ├── risk_manager.py
-│   └── validator.py
-│
-├── signal/              # Standalone indicator & pattern functions
-│   ├── indicators.py    # ema, rsi, atr, macd, bollinger, ...
-│   └── patterns.py      # bullish_engulfing, sweep_prev_low, orb, ...
-│
-├── viz/                 # Static chart generation (matplotlib)
-│   └── plotter.py
-│
-├── ui/                  # Interactive web UI     →  python ui/app.py
-│   ├── app.py           # Entry point
-│   ├── layout.py
-│   ├── pages/           # dashboard.py · chart.py · journal.py
-│   ├── components/      # metrics_panel.py · run_selector.py
-│   ├── callbacks/       # run · chart · journal · sidebar · backtest
-│   └── data/
-│       └── loader.py
-│
-├── docs/                # Spec & integration notes
-├── tests/               # test_data_feed.py
-├── data/
-│   └── fallback.csv     # Synthetic EURUSD H1 data (2023)
-└── results/             # Generated outputs (gitignored)
+### CSV fallback
+
+Place a CSV file at `data/fallback.csv` with this header:
+
+```csv
+time,open,high,low,close,tick_volume
+2023-01-02 00:00:00,1.07016,1.07027,1.07004,1.07016,2085
 ```
 
----
+The repo already includes a fallback dataset so the engine can run without MT5.
 
-## Locking Rules
+## Main Application Surfaces
 
-The following config sections are **read-only to the AI loop** and must only be changed manually:
+### Backend
 
-- `backtest` — symbol, capital, costs
-- `windows` — date ranges
-- `time` — timezone settings
-- `visualization` — chart settings
-- `risk.constraints` — safety limits
+The FastAPI backend lives in `api/` and provides:
 
-Only `strategy` (and optionally `risk.model` / model params) may be modified by `ai_loop.py`.
+- `/auth/*` for register/login/JWT user flows
+- `/api/projects` for project CRUD
+- `/api/projects/{id}/strategies` and `/api/strategies/{id}` for strategy CRUD
+- `/api/strategies/{id}/runs` and `/api/strategies/{id}/runs/trigger` for run history and execution
+- `/api/runs/{id}/chart-data`, `/trades`, and `/metrics` for review surfaces
+- `/api/library/indicators` and `/patterns` for the strategy builder
+- `/api/billing/*` for Stripe checkout, portal, webhook, and billing status
+
+### Frontend
+
+The React app lives in `web/` and provides:
+
+- landing page and pricing
+- login and registration
+- dashboard with project cards
+- project detail with strategy list and run history
+- strategy editor with the visual builder
+- run detail with chart, trades, and metrics
+- settings with billing status and portal actions
+
+## Development Notes
+
+- The FastAPI app auto-creates tables on startup.
+- The async runner wraps the unchanged engine and stores run metadata in the database.
+- Run artifacts still live in `results/`, and database rows store the artifact path.
+- Stripe routes return configuration errors until Stripe keys and price IDs are provided.
+
+## Useful Commands
+
+```bash
+# Backend health
+curl http://localhost:8000/health
+
+# Run the backend
+uvicorn api.main:app --reload --port 8000
+
+# Run the frontend
+cd web
+npm run dev
+
+# Production frontend build
+cd web
+npm run build
+
+# Legacy local UI
+python ui/app.py
+
+# Direct engine run
+python run.py
+```

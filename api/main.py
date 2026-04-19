@@ -1,6 +1,7 @@
 """FastAPI application entrypoint for the StratForge SaaS wrapper."""
 
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,9 +11,19 @@ from api.database import create_tables
 from api.routers import auth, billing, chart, library, projects, runs, strategies, trades
 
 
+logger = logging.getLogger("stratforge.api")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await create_tables()
+    logger.info("=" * 60)
+    logger.info("StratForge API ready")
+    logger.info("API base: http://127.0.0.1:8000")
+    logger.info("API docs: http://127.0.0.1:8000/docs")
+    logger.info("Health: http://127.0.0.1:8000/health")
+    logger.info("Expected frontend: %s", settings.frontend_url)
+    logger.info("=" * 60)
     yield
 
 
